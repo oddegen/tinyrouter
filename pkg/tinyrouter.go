@@ -3,6 +3,7 @@ package tinyrouter
 import (
 	"context"
 	"net/http"
+	"path"
 	"strings"
 )
 
@@ -28,17 +29,7 @@ type route struct {
 }
 
 func (r *Router) Handle(method, pattern string, handler http.HandlerFunc) {
-	if len(pattern) > 1 && pattern[len(pattern)-1] == '/' {
-		panic("tinyrouter: Error can't have a trailing /")
-	}
-
-	if pattern[0] != '/' {
-		pattern = "/" + pattern
-	}
-
-	if len(pattern) == 1 && pattern[len(pattern)-1] == '/' {
-		pattern = ""
-	}
+	pattern = cleanPath(pattern)
 
 	route := route{
 		method:  strings.ToUpper(method),
@@ -56,7 +47,7 @@ func (router *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	for _, route := range router.routes {
 
-		if match(route.pattern, strings.TrimSuffix(r.URL.Path, "/")) {
+		if match(route.pattern, cleanPath(r.URL.Path)) {
 			if r.Method != route.method {
 				allows = append(allows, route.method)
 				continue
@@ -83,7 +74,7 @@ func (route *Router) GetParam(r *http.Request, key string) string {
 	return field[key]
 }
 
-func (r *Router) Route(pattern string, fn func(r *Router)) {
+func (r *Router) Group(pattern string, fn func(r *Router)) {
 	subrouter := NewRouter()
 
 	fn(subrouter)
@@ -141,4 +132,25 @@ func getParam(pattern string) int {
 	}
 
 	return i
+}
+
+func cleanPath(p string) string {
+	if p == "" {
+		return "/"
+	}
+	if p[0] != '/' {
+		p = "/" + p
+	}
+	np := path.Clean(p)
+	// path.Clean removes trailing slash except for root;
+	// put the trailing slash back if necessary.
+	if p[len(p)-1] == '/' && np != "/" {
+		// Fast path for common case of p being the string we want:
+		if len(p) == len(np)+1 && strings.HasPrefix(p, np) {
+			np = p
+		} else {
+			np += "/"
+		}
+	}
+	return np
 }
