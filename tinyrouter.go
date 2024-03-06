@@ -51,6 +51,7 @@ func (router *Router) Handle(method string, pattern string, handler http.Handler
 	}
 
 	validatePattern(pattern)
+	pattern = cleanPath(pattern)
 
 	if router.prefix != "" {
 		pattern = path.Join(router.prefix, pattern)
@@ -71,6 +72,9 @@ func (router *Router) HandleFunc(method string, pattern string, handler http.Han
 }
 
 func (r *Router) Group(pattern string, fn func(r *Router)) {
+	validatePattern(pattern)
+	pattern = cleanPath(pattern)
+
 	subrouter := NewRouter()
 	subrouter.prefix = path.Join(r.prefix, pattern)
 
