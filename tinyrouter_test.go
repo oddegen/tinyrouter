@@ -147,10 +147,6 @@ func TestRouter(t *testing.T) {
 		router.HandleFunc(http.MethodGet, "/redirect", func(_ http.ResponseWriter, _ *http.Request) {})
 
 		req, err := http.NewRequest(http.MethodGet, "/redirect/", nil)
-		router := NewRouter()
-		router.HandleFunc(http.MethodGet, "/redirect", func(_ http.ResponseWriter, _ *http.Request) {})
-
-		req, err := http.NewRequest(http.MethodGet, "/redirect/", nil)
 		assertNoError(t, err)
 
 		res := httptest.NewRecorder()
@@ -166,7 +162,6 @@ func TestGroup(t *testing.T) {
 	req, err := http.NewRequest(http.MethodPost, "/api/user/123", nil)
 	assertNoError(t, err)
 
-	router.Group("/api/", func(tr *Router) {
 	router.Group("/api/", func(tr *Router) {
 		tr.HandleFunc(http.MethodPost, "user/:id", func(w http.ResponseWriter, r *http.Request) {
 			id := tr.GetParam(r, "id")
