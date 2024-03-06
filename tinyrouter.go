@@ -121,7 +121,11 @@ func (router *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (route *Router) GetParam(r *http.Request, key string) string {
 	field := r.Context().Value(ctxKey("ctxKey")).(map[string]string)
-	return field[key]
+	v, ok := field[key]
+	if !ok {
+		return ""
+	}
+	return v
 }
 
 func match(pattern, path string) (match, trail bool) {

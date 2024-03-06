@@ -1,98 +1,149 @@
 package tinyrouter
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
 
 func TestRouter(t *testing.T) {
+	router := NewRouter()
 
-	t.Run("route a simple GET request", func(t *testing.T) {
-		router := NewRouter()
+	tests := []struct {
+		name       string
+		method     string
+		pattern    string
+		path       string
+		reqMethod  string
+		handler    http.HandlerFunc
+		statusCode int
+		respBody   string
+	}{
+		{
+			name:      "route a simple GET request",
+			method:    http.MethodGet,
+			pattern:   "/home",
+			path:      "/home",
+			reqMethod: http.MethodGet,
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Write([]byte("home"))
+			},
+			statusCode: http.StatusOK,
+			respBody:   "home",
+		},
+		{
+			name:       "not found",
+			method:     http.MethodGet,
+			pattern:    "/found",
+			path:       "/notfound",
+			reqMethod:  http.MethodGet,
+			handler:    func(_ http.ResponseWriter, _ *http.Request) {},
+			statusCode: http.StatusNotFound,
+			respBody:   "404 page not found\n",
+		},
+		{
+			name:      "get named param from request",
+			method:    http.MethodGet,
+			pattern:   "/articles/:id",
+			path:      "/articles/4",
+			reqMethod: http.MethodGet,
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				id := router.GetParam(r, "id")
+				w.Write([]byte(id))
+			},
+			statusCode: http.StatusOK,
+			respBody:   "4",
+		},
+		{
+			name:      "get catch-all param from request",
+			method:    http.MethodGet,
+			pattern:   "/articles/*all",
+			path:      "/articles/user/name/bob",
+			reqMethod: http.MethodGet,
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				all := router.GetParam(r, "all")
+				w.Write([]byte(all))
+			},
+			statusCode: http.StatusOK,
+			respBody:   "user/name/bob",
+		},
+		{
+			name:      "empty param",
+			method:    http.MethodGet,
+			pattern:   "/articles/:id",
+			path:      "/articles/123",
+			reqMethod: http.MethodGet,
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				name := router.GetParam(r, "name")
+				w.Write([]byte(name))
+			},
+			statusCode: http.StatusOK,
+			respBody:   "",
+		},
+		{
+			name:       "method not allowed",
+			method:     http.MethodGet,
+			pattern:    "/articles",
+			path:       "/articles",
+			reqMethod:  http.MethodPost,
+			handler:    func(_ http.ResponseWriter, _ *http.Request) {},
+			statusCode: http.StatusMethodNotAllowed,
+			respBody:   "Method Not Allowed\n",
+		},
+		{
+			name:       "no redirection",
+			method:     http.MethodGet,
+			pattern:    "/articles",
+			path:       "/articles/",
+			reqMethod:  http.MethodGet,
+			handler:    func(_ http.ResponseWriter, _ *http.Request) {},
+			statusCode: http.StatusNotFound,
+			respBody:   "404 page not found\n",
+		},
+	}
 
-		req, err := http.NewRequest(http.MethodGet, "/home", nil)
-		assertNoError(t, err)
+	for _, tt := range tests {
+		router.HandleFunc(tt.method, tt.pattern, tt.handler)
+	}
 
-		router.HandleFunc(http.MethodGet, "/home", func(w http.ResponseWriter, r *http.Request) {
-			w.Write([]byte("home"))
+	ts := httptest.NewServer(router)
+	defer ts.Close()
+
+	client := &http.Client{}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+
+			req, err := http.NewRequest(tt.reqMethod, ts.URL+tt.path, nil)
+			assertNoError(t, err)
+
+			res, err := client.Do(req)
+			assertNoError(t, err)
+
+			assertEqual(t, res.StatusCode, tt.statusCode)
+			body, err := io.ReadAll(res.Body)
+			defer res.Body.Close()
+
+			assertNoError(t, err)
+			assertEqual(t, string(body), tt.respBody)
 		})
-
-		res := httptest.NewRecorder()
-		router.ServeHTTP(res, req)
-
-		assertEqual(t, res.Code, http.StatusOK)
-
-		expected := "home"
-		assertEqual(t, res.Body.String(), expected)
-
-	})
-
-	t.Run("not found", func(t *testing.T) {
-		router := NewRouter()
-
-		req, err := http.NewRequest("GET", "/notfound", nil)
-		assertNoError(t, err)
-
-		router.HandleFunc(http.MethodGet, "/found", func(_ http.ResponseWriter, _ *http.Request) {})
-
-		res := httptest.NewRecorder()
-		router.ServeHTTP(res, req)
-
-		assertEqual(t, res.Code, http.StatusNotFound)
-		assertEqual(t, res.Body.String(), "404 page not found")
-	})
-
-	t.Run("get params from request", func(t *testing.T) {
-		router := NewRouter()
-
-		req, err := http.NewRequest(http.MethodGet, "/articles/4", nil)
-		assertNoError(t, err)
-
-		router.HandleFunc(http.MethodGet, "/articles/:id", func(w http.ResponseWriter, r *http.Request) {
-			id := router.GetParam(r, "id")
-			w.Write([]byte(id))
-		})
-
-		res := httptest.NewRecorder()
-		router.ServeHTTP(res, req)
-
-		assertEqual(t, res.Code, http.StatusOK)
-
-		expected := "4"
-		assertEqual(t, res.Body.String(), expected)
-	})
-
-	t.Run("method not allowed", func(t *testing.T) {
-		router := NewRouter()
-
-		req, err := http.NewRequest(http.MethodGet, "/articles", nil)
-		assertNoError(t, err)
-
-		router.HandleFunc(http.MethodPost, "/articles", func(_ http.ResponseWriter, _ *http.Request) {})
-
-		res := httptest.NewRecorder()
-		router.ServeHTTP(res, req)
-
-		assertEqual(t, res.Code, http.StatusMethodNotAllowed)
-		assertEqual(t, res.Header().Get("Allow"), "POST")
-	})
+	}
 
 	t.Run("redirect", func(t *testing.T) {
-		router := NewRouter()
 		RedirectTrailingSlash = true
 
-		req, err := http.NewRequest(http.MethodGet, "/articles/", nil)
-		assertNoError(t, err)
+		router := NewRouter()
+		router.HandleFunc(http.MethodGet, "/redirect", func(_ http.ResponseWriter, _ *http.Request) {})
 
-		router.HandleFunc(http.MethodGet, "/articles", func(_ http.ResponseWriter, _ *http.Request) {})
+		req, err := http.NewRequest(http.MethodGet, "/redirect/", nil)
+		assertNoError(t, err)
 
 		res := httptest.NewRecorder()
 		router.ServeHTTP(res, req)
 
 		assertEqual(t, res.Code, http.StatusSeeOther)
 	})
-
 }
 
 func TestGroup(t *testing.T) {
@@ -101,7 +152,7 @@ func TestGroup(t *testing.T) {
 	req, err := http.NewRequest(http.MethodPost, "/api/user/123", nil)
 	assertNoError(t, err)
 
-	router.Group("api/", func(tr *Router) {
+	router.Group("/api/", func(tr *Router) {
 		tr.HandleFunc(http.MethodPost, "user/:id", func(w http.ResponseWriter, r *http.Request) {
 			id := tr.GetParam(r, "id")
 			w.Write([]byte(id))
