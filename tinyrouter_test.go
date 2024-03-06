@@ -101,6 +101,16 @@ func TestRouter(t *testing.T) {
 			statusCode: http.StatusNotFound,
 			respBody:   "404 page not found\n",
 		},
+		{
+			name:       "without preceding slash",
+			method:     http.MethodGet,
+			pattern:    "articles",
+			path:       "/articles/",
+			reqMethod:  http.MethodGet,
+			handler:    func(_ http.ResponseWriter, _ *http.Request) {},
+			statusCode: http.StatusOK,
+			respBody:   "",
+		},
 	}
 
 	for _, tt := range tests {
